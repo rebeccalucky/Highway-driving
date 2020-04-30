@@ -129,21 +129,15 @@ int main() {
           double left_bv = 1000;
           double right_fv = 1000;
           double right_bv = 1000;
-          bool front_car = false;
-          bool back_car = false;
-          bool left_front = false;
-          bool left_back = false;
-          bool right_front = false;
-          bool right_back = false;
   
           for(int i=0; i<sensor_fusion.size(); ++i){
             double carvx = sensor_fusion[i][3];
             double carvy = sensor_fusion[i][4];
             double vel = sqrt(carvx * carvx + carvy * carvy);
-            double cars = sensor_fusion[i][1];
-            double card = sensor_fusion[i][2];
+            double cars = sensor_fusion[i][5];
+            double card = sensor_fusion[i][6];
             double cars_lane = FindLane(card, lane_width);
-            double s = cars + vel * previous_path_x.size();
+            double s = cars + vel * t;
             
             if(cars_lane == car_lane){
               dist = s - car_s;
