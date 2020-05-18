@@ -155,7 +155,7 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s,
 }
 
 // Find lane. From left to right are 0,1,2, respectively.
-double FindLane(double d, double lane_width){
+double FindLane(double d){
   double lane;
   if(d > 0 && d < 4){
     lane = 0.;
