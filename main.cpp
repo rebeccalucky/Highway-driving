@@ -12,7 +12,7 @@
 #include "spline.h"
 
 // for convenience
-using nlohmann::json;
+using json = nlohmann::json;
 using std::string;
 using std::vector;
 
@@ -53,7 +53,7 @@ int main() {
     map_waypoints_dy.push_back(d_y);
   }
   
-  double ref_v = 0.;
+  double ref_v = 0;    //Initialize the velocity and car lane.
   double car_lane = 1.;
 
   h.onMessage([&ref_v, &car_lane,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
@@ -76,7 +76,6 @@ int main() {
           // j[1] is the data JSON object
           
           // Main car's localization Data
-          double lane_width = 4.;
           double car_x = j[1]["x"];
           double car_y = j[1]["y"];
           double car_s = j[1]["s"];
@@ -95,84 +94,100 @@ int main() {
           //   of the road.
           auto sensor_fusion = j[1]["sensor_fusion"];
 
-          json msgJson;
-
-          vector<double> next_x_vals;
-          vector<double> next_y_vals;
 
           /**
            * TODO: define a path made up of (x,y) points that the car will visit
            *   sequentially every .02 seconds
            */
           
-          if(previous_path_x.size()>0){
+          int prev_size = previous_path_x.size();
+          
+          if(prev_size > 0){
             car_s = end_path_s;
-            car_d = end_path_d;
           }
           
           int path_size = 50;
-          double step_time = 0.02;
-          double t = previous_path_x.size() * step_time;
-          double max_v = 49.5 * (1600.0 / 3600.0); //Change mph to m/s
-          double max_acc = 9.5;
-          int num_lane = 3;
-          
+          double step_time = 0.02;    
+          double t = prev_size * step_time;  //Prediction time.
+          double max_v = 49.5 * (1600.0 / 3600.0); //Set maximum velocity. Change mph to m/s
+          double max_acc = 9;   //Set maximum acceloration.
+          int num_lane = 3;    //Set total amount of lane.
+
           //predictions of other cars' position at the end of the path.
           double dist;
-          double min_dist = 1000;
-          double lf_min = 1000;
-          double lb_min = -1000;
-          double rf_min = 1000;
-          double rb_min = -1000;
-          double front_v = 1000;
-          double left_fv = 1000;
-          double left_bv = 1000;
-          double right_fv = 1000;
-          double right_bv = 1000;
+          double min_dist = 1000;  //Will be minimum distance between front car.
+          double lf_min = 1000;   //Will be minimum distance between left front car.        
+          double lb_min = -1000;  //Will be minimum distance between left rear car.
+          double rf_min = 1000;  //Will be minimum distance between right front car.
+          double rb_min = -1000;  //Will be minimum distance between right rear car.
+          double front_v = 1000;  //Will be nearest front car's velocity.
+          double left_fv = 1000;  //Will be nearest left front car's velocity.
+          double right_fv = 1000;  //Will be nearest right front car's velocity.
+          double lf2_min = 1000;  //Will be minimum distance between 2 lanes left front car.
+          double left2_fv = 1000;  //Will be nearest 2 lanes left front car's velocity.
+          double lb2_min = -1000;  //Will be minimum distance between 2 lanes left rear car.
+          double rf2_min = 1000;  //Will be minimum distance between 2 lanes right front car.
+          double right2_fv = 1000;  //Will be nearest 2 lanes right front car's velocity.
+          double rb2_min = -1000;  //Will be minimum distance between 2 lanes right rear car's velocity.
   
-          for(int i=0; i<sensor_fusion.size(); ++i){
+          for(int i=0; i<sensor_fusion.size(); i++){
             double carvx = sensor_fusion[i][3];
             double carvy = sensor_fusion[i][4];
             double vel = sqrt(carvx * carvx + carvy * carvy);
             double cars = sensor_fusion[i][5];
             double card = sensor_fusion[i][6];
-            double cars_lane = FindLane(card, lane_width);
+            double cars_lane = FindLane(card);
             double s = cars + vel * t;
             
             if(cars_lane == car_lane){
               dist = s - car_s;
-              if(dist>0 && dist<90 && dist<min_dist){
+              if(dist>0 && dist<30 && dist<min_dist){  //If distance is larger than 30m, consider there is no car.
                 min_dist = dist;
                 front_v = vel;
               }
             }else if(cars_lane == car_lane-1){
               dist = s - car_s;
-              if(dist>0 && dist<90 && dist<lf_min){
+              if(dist>0 && dist<30 && dist<lf_min){
                 lf_min = dist;
                 left_fv = vel;
-              }else if(dist<0 && dist>-90 && dist>lb_min){
+              }else if(dist<0 && dist>-30 && dist>lb_min){
                 lb_min = dist;
-                left_bv = vel;
+              }
+            }else if(cars_lane == car_lane-2){
+              dist = s - car_s;
+              if(dist>0 && dist<30 && dist<lf2_min){
+                lf2_min = dist;
+                left2_fv = vel;
+              }else if(dist<0 && dist>-30 && dist>lb2_min){
+                lb2_min = dist;
               }
             }else if(cars_lane == car_lane+1){
               dist = s - car_s;
-              if(dist>0 && dist<90 && dist<rf_min){
+              if(dist>0 && dist<30 && dist<rf_min){
                 rf_min = dist;
                 right_fv = vel;
-              }else if(dist<0 && dist>-90 && dist>rb_min){
+              }else if(dist<0 && dist>-30 && dist>rb_min){
                 rb_min = dist;
-                right_bv = vel;
               }
-            }           
+            }else if(cars_lane == car_lane+2){
+              dist = s - car_s;
+              if(dist>0 && dist<30 && dist<rf2_min){
+                rf2_min = dist;
+                right2_fv = vel;
+              }else if(dist<0 && dist>-30 && dist>rb2_min){
+                rb2_min = dist;
+              }
+            }
           }
           
-          /**Behavior planner.
-           * KL is keep lane.
-           * LT is left turn.
-           * RT is right turn.
-           */
+          //Behavior planner.
+          // KL is keep lane.
+          // LT is left turn.
+          // RT is right turn.
+          //PTL is turn 2 lanes left.
+          //PRL is turn 2 lanes right.
           
-          //Calculate cost and choose the minimum cost.
+          //Calculate cost and choose the minimum.
           double min_cost = 10000;
           string behv = "null";
           double kl_cost = KL_Cost(min_dist);
@@ -190,68 +205,91 @@ int main() {
             min_cost = tr_cost;
             behv = "TR";
           }
-
+          double ptl_cost = PTL_Cost(car_lane, min_dist, lf2_min, lb2_min, lf_min, lb_min);
+          if(ptl_cost<min_cost){
+            min_cost = ptl_cost;
+            behv = "PTL";
+          }
+          double rtl_cost = PRL_Cost(car_lane, min_dist, rf2_min, rb2_min, rf_min, rb_min);
+          if(rtl_cost<min_cost){
+            min_cost = rtl_cost;
+            behv = "RTL";
+          }
+          
           //Create trajectory according to the choice.
           double speed_diff;
           double target_d;
+          double target_s;
           
           if(behv == "KL"){
             car_lane = car_lane;
             target_d = 2+car_lane*4;
             speed_diff = front_v - ref_v;
+            target_s = min_dist;
           }else if(behv == "TL"){
             car_lane = car_lane - 1;
             target_d = 2+car_lane*4;
             speed_diff = left_fv - ref_v;
+            target_s = lf_min;
           }else if(behv == "TR"){
             car_lane = car_lane + 1;
             target_d = 2+car_lane*4;
             speed_diff = right_fv - ref_v;
+            target_s = rf_min;
+          }else if(behv == "PTL"){
+            car_lane = car_lane - 1;
+            target_d = 2+car_lane*4;
+            speed_diff = left2_fv - ref_v;
+            target_s = lf_min;
+          }else if(behv == "PRL"){
+            car_lane = car_lane + 1;
+            target_d = 2+car_lane*4;
+            speed_diff = right2_fv - ref_v;
+            target_s = rf_min;
           }
           
-          if(speed_diff>0){
-            speed_diff = max_acc * step_time;
-          }else if(speed_diff<0){
-            speed_diff = (-max_acc * step_time);
+          if((target_s == 1000) && (speed_diff>0)){  
+            speed_diff = max_acc * step_time;  //If there is no target lane front car. Accelorate.
+          }else if(speed_diff<0){              
+            speed_diff = (-max_acc * step_time);  //If front car velocity is smaller than me, Decelorate.
+          }else{
+            speed_diff = 0;  //If front car velocity is bigger. Keep velocity.
           }
-          
+ 
           vector<double> sp_x;
           vector<double> sp_y;
                 
           //Take 2 previous path points for spline.
           
-          double ref_x;
-          double ref_y;
-          double ref_yaw;
+          double ref_x = car_x;
+          double ref_y = car_y;
+          double ref_yaw = deg2rad(car_yaw);
           
-          if(previous_path_x.size()<2){
+          //If there is not many previous points. Use current car point and the point before it.
+          if(prev_size < 2){
             double prev_car_x = car_x - cos(car_yaw);
             double prev_car_y = car_y - sin(car_yaw);
-            ref_x = car_x;
-            ref_y = car_y;
-            ref_yaw = deg2rad(car_yaw);
             sp_x.push_back(prev_car_x);
             sp_y.push_back(prev_car_y);
             sp_x.push_back(car_x);
             sp_y.push_back(car_y);
           }else{
-            double prev_car_x = previous_path_x[previous_path_x.size()-2];
-            double prev_car_y = previous_path_y[previous_path_x.size()-2];
-            ref_x = previous_path_x[previous_path_x.size()-1];
-            ref_y = previous_path_y[previous_path_x.size()-1];
-            ref_yaw = atan2((ref_y-prev_car_y), (ref_x-prev_car_x));
-            sp_x.push_back(prev_car_x);
-            sp_y.push_back(prev_car_y);
+            double prev_path_x = previous_path_x[prev_size - 5];
+            double prev_path_y = previous_path_y[prev_size - 5];
+            ref_x = previous_path_x[prev_size - 1];
+            ref_y = previous_path_y[prev_size - 1];
+            ref_yaw = atan2((ref_y-prev_path_y), (ref_x-prev_path_x));
+            sp_x.push_back(prev_path_x);
+            sp_y.push_back(prev_path_y);
             sp_x.push_back(ref_x);
             sp_y.push_back(ref_y);          
           }
           
-          //Create 2 more points for spline.
-          vector<double> nextp0 = getXY(car_s + 30, target_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-          vector<double> nextp1 = getXY(car_s + 60, target_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+          //Create 3 more points for spline.
+          vector<double> nextp0 = getXY(car_s + 50, target_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+          vector<double> nextp1 = getXY(car_s + 70, target_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
           vector<double> nextp2 = getXY(car_s + 90, target_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
           
-          //Initialize the spline.
           sp_x.push_back(nextp0[0]);
           sp_x.push_back(nextp1[0]);
           sp_x.push_back(nextp2[0]);          
@@ -262,25 +300,32 @@ int main() {
           
           
           //Change sp points into local car coordinates.
-          for(int i=0; i<sp_x.size(); ++i){
-            sp_x[i] = (sp_x[i] - ref_x) * cos(0-ref_yaw) - (sp_y[i] - ref_y) * sin(0-ref_yaw);
-            sp_y[i] = (sp_x[i] - ref_x) * sin(0-ref_yaw) + (sp_y[i] - ref_y) * cos(0-ref_yaw);
+          for(int i=0; i < sp_x.size(); i++){
+            double delta_x = sp_x[i] - ref_x;
+            double delta_y = sp_y[i] - ref_y;
+            sp_x[i] = delta_x * cos(0 - ref_yaw) - delta_y * sin(0 - ref_yaw);
+            sp_y[i] = delta_x * sin(0 - ref_yaw) + delta_y * cos(0 - ref_yaw);
           }
           
+          //Initialize the spline.
           tk::spline s;
           s.set_points(sp_x, sp_y);
+      
+          vector<double> next_x_vals;
+          vector<double> next_y_vals;
           
-          for(int i=0; i<previous_path_x.size(); ++i){
+          //Use reserved previous path points for next path.
+          for(int i=0; i < prev_size; i++){
             next_x_vals.push_back(previous_path_x[i]);
             next_y_vals.push_back(previous_path_y[i]);
           }
           //Calculate 30m ahead of the car position.
-          double target_x = 30;
+          double target_x = 30.;
           double target_y = s(target_x);
           double target_dist = sqrt(target_x * target_x + target_y * target_y);
           double x_add = 0; 
           
-          for(int i=0; i<path_size-previous_path_x.size(); ++i){
+          for(int i=1; i < path_size - prev_size; i++){
             ref_v += speed_diff;
             if(ref_v>max_v){
               ref_v = max_v;
@@ -289,16 +334,18 @@ int main() {
             double x = x_add + target_x / N;;
             double y = s(x);
             x_add = x;
-            ref_x = x;
-            ref_y = y;
-            x = ref_x * cos(ref_yaw) - ref_y * sin(ref_yaw);
-            y = ref_x * sin(ref_yaw) + ref_y * cos(ref_yaw);
+            double ref_x0 = x;
+            double ref_y0 = y;
+            x = ref_x0 * cos(ref_yaw) - ref_y0 * sin(ref_yaw);
+            y = ref_x0 * sin(ref_yaw) + ref_y0 * cos(ref_yaw);
             x += ref_x;
             y += ref_y;
             
             next_x_vals.push_back(x);
             next_y_vals.push_back(y);
           }
+
+          json msgJson;
              
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
